@@ -1,0 +1,78 @@
+# Probability of Death on LI WL within 6 months of Transplant in 2006 by AB0 & region 
+
+liver = ODBC::read_sql("SOMEDATABASE", "select waitlistidentification,
+                           initial_date_of_waiting,region_at_listing,
+                           blood_type,
+                           dayswait_chronologically,transplantindicatorvariable,
+
+                           removal_code_number
+                           from SomeDataSet.SomeView.WaitlistforLiver
+                           where initial_date_of_waiting between '2006-01-01'
+                           and '2006-12-31'") %>%
+
+ 
+  mutate(blood_type_update = ifelse (blood_type %in% c("A1" , "A2"), "A" , 
+                              ifelse (blood_type %in% c("A1B" , "A2B"), "AB" , blood_type))) %>%
+  unite (blood_type_region , blood_type_update , region_at_listing) %>%
+  mutate (blood_type_region = factor(blood_type_region , levels = c("A_1" , "A_2" , "A_3" , "A_4" , "A_5" , "A_6" , "A_7" , "A_8" , "A_9" , "A_10" , "A_11" ,
+                                                      "B_1" , "B_2" , "B_3" , "B_4" , "B_5" , "B_6" , "B_7" , "B_8" , "B_9" , "B_10" , "B_11" ,
+                                                      "AB_1" , "AB_2" , "AB_3" , "AB_4" , "AB_5" , "AB_6" , "AB_7" , "AB_8" , "AB_9" , "AB_10" , "AB_11" ,
+                                                      "O_1" , "O_2" , "O_3" , "O_4" , "O_5" , "O_6" , "O_7" , "O_8" , "O_9" , "O_10" , "O_11")) ,
+          event = as.factor(ifelse (is.na(removal_code_number) , "No Event",
+                                    ifelse (transplantindicatorvariable == 1, "Transplant",
+                                            #including too sick to transplant as death for liver
+                                            ifelse (removal_code_number %in% c(8 , 13) , "Death" , "Other Removal")))))
+
+
+#Counts number of registrations in each age category
+regs <- fct_count(liver$event)
+liver %>%
+  
+  tabyl(event) %>%
+  adorn_pct_formatting() %>%
+  kable(booktabs=T, format="latex", col.names=c("Death", "N", "%"),
+        align="lrr") %>%
+  kable_styling()
+
+
+cr_liver <- cuminc(ftime = liver$dayswait_chronologically,
+                   fstatus = liver$event,
+                   group = liver$blood_type_region,
+                   cencode = "No Event")
+#Estimates probability of event at 365 days and variance. Returns a list.
+tp <- timepoints(cr_liver, times = c(180))
+#Takes tp list objects and forces it into a data.frame
+tab <- data.frame(strata = rownames(tp$est), #Category/Event label
+                  est = tp$est[, 1],
+                  #Variance
+                  var = tp$var[, 1]) %>%
+  #CI calculation - references at end
+  mutate(a = ifelse(var == 0, 0, (qnorm(1 - (0.05/2))*sqrt(var))/(est*log(est))),
+         #Lower bound calculation
+         lcl=ifelse(var == 0, 0, est^exp(-a)),
+         #Upper bound calculation
+         ucl=ifelse(var == 0, 0, est^exp(a)),
+         #Formats results for display
+         prob.Transplant = paste0(round(100*est, 2), "%"),
+         CI = paste0("(", round(100*lcl, 2), "%, ", round(100*ucl, 2),"%)"))
+# Pull out only the information pertaining to event = transplant that is of interest
+tab_Transplant <- tab %>%
+  #Restricts to Transplant probability estimates
+  filter(grepl("Death", strata)) %>%
+  mutate(strata = gsub(" Death", "", strata)) %>%
+
+  
+  #Adds registrations
+  left_join(regs, by = c("blood_type_region" = "f")) %>%
+  #Keeps and reorders necessary columns
+  dplyr::select(blood_type_region, n, prob.Transplant, CI) %>%
+  #Renames columns for display
+  rename("blood_type Region" = blood_type_region, "Registrations" = n,
+         "Prob. Death within 1 Yr" = prob.Transplant, "95% CI" = CI) %>%
+  kable(format = "latex", booktabs = T, align="lrrr",
+        caption = "Probability of Death Within 6 months of
+Transplant in 2006") %>%
+
+  kable_styling(latex_options=c("hold_position"))
+
+tab_Transplant
