@@ -1,3 +1,12 @@
+library(cmprsk)
+library(janitor)
+library(knitr)
+library(dplyr)
+library(magrittr)
+library(forcats)
+library(kableExtra)
+library(tidyr)
+
 # Probability of Death on LI WL within 6 months of Transplant in 2006 by AB0 & region 
 
 liver = ODBC::read_sql("SOMEDATABASE", "select waitlistidentification,
@@ -39,7 +48,7 @@ cr_liver <- cuminc(ftime = liver$dayswait_chronologically,
                    fstatus = liver$event,
                    group = liver$blood_type_region,
                    cencode = "No Event")
-#Estimates probability of event at 365 days and variance. Returns a list.
+#Estimates probability of event at 180 days and variance. Returns a list.
 tp <- timepoints(cr_liver, times = c(180))
 #Takes tp list objects and forces it into a data.frame
 tab <- data.frame(strata = rownames(tp$est), #Category/Event label
@@ -68,7 +77,7 @@ tab_Transplant <- tab %>%
   dplyr::select(blood_type_region, n, prob.Transplant, CI) %>%
   #Renames columns for display
   rename("blood_type Region" = blood_type_region, "Registrations" = n,
-         "Prob. Death within 1 Yr" = prob.Transplant, "95% CI" = CI) %>%
+         "Prob. Death within 6 months" = prob.Transplant, "95% CI" = CI) %>%
   kable(format = "latex", booktabs = T, align="lrrr",
         caption = "Probability of Death Within 6 months of
 Transplant in 2006") %>%
