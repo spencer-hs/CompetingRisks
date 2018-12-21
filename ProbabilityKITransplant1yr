@@ -1,0 +1,67 @@
+# Probability of DD Transplant on Kidney WL 2012-2013
+Kidneydf= ODBC::read_sql("SOMEDATABASE", 
+
+"select waitlistidentification,
+initial_date_of_waiting,
+initial_age_at_waiting,
+dayswait_chronologicallyologically,
+cprareadingat4weeks,
+transplantindicatorvariable
+
+from SomeDataSet.SomeView.WaitlistforKidneydfneyPancreas
+where organsforlisting = 'Kidneydfney' and initial_date_of_waiting between '2012-01-01'and '2013-12-31'") %>%
+
+mutate(cpra.cat=cut(cprareadingat4weeks,breaks=c(-Inf,0,19,79,Inf), labels = c("0","1-19","20-79","80+")),
+       event = as.factor(ifelse(is.na(removal_code_number), "No Event",
+                                #transplantindicatorvariable indicates DECEASED donor transplant
+                                ifelse(transplantindicatorvariable == 1 , "Transplant",
+                                       
+                                       ifelse(removal_code_number %in% c(8, 13) , "Death",
+                                              "Other Removal")))))   
+       
+regs<-fct_count(Kidneydf$cpra.cat)
+
+Kidneydf %>% 
+  tabyl(cpra.cat, show_na=FALSE) %>% 
+    adorn_pct_formatting() %>% 
+      kable(booktabs=T,format="latex",col.names=c("CPRA Category","N","%"), align="lrr") %>%
+        kable_styling()
+
+cr_Kidneydf <- cuminc(ftime = Kidneydf$dayswait_chronologically,
+                   fstatus = Kidneydf$event,
+                  group = Kidneydf$cpra.cat,
+                   cencode = "No Event")
+
+tp <- timepoints(cr_Kidneydf, times = c(365))
+
+tab <- data.frame(strata = rownames(tp$est), #Category/Event label
+                  est = tp$est[, 1],
+                  #Variance
+                  var = tp$var[, 1]) %>%
+  #CI calculation - references at end
+  mutate(a = ifelse(var == 0, 0, (qnorm(1 - (0.05/2))*sqrt(var))/(est*log(est))),
+         #Lower bound calculation
+         lcl=ifelse(var == 0, 0, est^exp(-a)),
+         #Upper bound calculation
+         ucl=ifelse(var == 0, 0, est^exp(a)),
+         #Formats results for display
+         prob.Transplant = paste0(round(100*est, 2), "%"),
+         CI = paste0("(", round(100*lcl, 2), "%, ", round(100*ucl, 2),"%)"))
+
+tab_Transplant<-tab %>% filter(grepl("Transplant", strata)) %>%
+  #Removes 'Transplant' from label
+  mutate(cpra.cat = gsub(" Transplant", "", strata)) %>%
+  #Adds registrations
+  left_join(regs, by = c("cpra.cat" = "f")) %>%
+  #Keeps and reorders necessary columns
+  dplyr::select(cpra.cat, n, prob.Transplant, CI) %>%
+  #Renames columns for display
+  rename("CPRA at listing" = cpra.cat, "Registrations" = n,
+         "Prob. Transplant within 1 Yr" = prob.Transplant, "95% CI" = CI) %>%
+  kable(format = "latex", booktabs = T, align="lrrr",
+        caption = "Probability of Deceased Donor Kidney Transplant Within One Year of
+Listing for Registrations Added 2012-2013 by CPRA category") %>%
+  # This option isn't necessary - included so table prints after code chunk here
+  kable_styling(latex_options=c("hold_position"))
+tab_Transplant
+
